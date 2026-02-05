@@ -1,0 +1,103 @@
+# =============================================
+# qBittorrent Leecher Banner 配置示例
+# =============================================
+
+# 应用基础配置
+app:
+  # 检查间隔（分钟）
+  interval: 30
+  # 日志级别: debug, info, warn, error
+  log_level: info
+  # 试运行模式（不写入文件）
+  dry_run: false
+
+# qBittorrent 服务器配置
+servers:
+  # 第一个服务器
+  - name: "Main Server"
+    url: "http://localhost:8080"
+    username: "admin"
+    password: "your_password"
+  # 可以添加更多服务器
+  # - name: "Backup Server"
+  #   url: "http://192.168.1.100:8080"
+  #   username: "admin"
+  #   password: "password"
+
+# 白名单配置（这些IP不会被ban）
+whitelist:
+  ips:
+    - "127.0.0.1"
+    - "192.168.1.0/24"
+    - "10.0.0.0/8"
+
+# 输出配置
+output:
+  # DAT文件路径
+  dat_file: "/data/leechers.dat"
+  # 输出格式: peerbanana, plain
+  format: "peerbanana"
+
+# 吸血判定规则配置
+# 使用 AND 组合：用户必须同时满足所有 criteria 条件才会被判定为吸血用户
+rules:
+  # 规则 1: 下载超过 1GB 但上传低于 50%
+  - name: "low_share_leecher"
+    enabled: true
+    action: "ban"
+    criteria:
+      downloaded:
+        mode: "absolute"
+        min: "1GB"
+      uploaded:
+        mode: "percent"
+        max: "50%"
+
+  # 规则 2: 进度达到 99%+ 但上传不足 20%
+  - name: "completed_low_upload"
+    enabled: true
+    action: "ban"
+    criteria:
+      progress:
+        min: 99
+      uploaded:
+        mode: "percent"
+        max: "20%"
+      relevance:
+        max: 0.3
+
+  # 规则 3: 活动超过 24 小时但上传不足 1%
+  - name: "stalled_seeder"
+    enabled: true
+    action: "ban"
+    criteria:
+      active_time:
+        min: "24h"
+      uploaded:
+        mode: "percent"
+        max: "1%"
+
+  # 规则 4: 使用加密协议且进度长期停滞
+  - name: "encrypted_stalled"
+    enabled: false
+    action: "ban"
+    criteria:
+      flag:
+        - "encrypted"
+      progress:
+        max: 5
+      active_time:
+        min: "1h"
+
+# =============================================
+# 过滤指标说明:
+# =============================================
+# - flag: 检测特定BT协议flag（encrypted, i2p, pex, dht等）
+# - progress: 客户端下载进度百分比 (0-100)
+# - uploaded: 已上传量，支持 percent/absolute 模式
+# - downloaded: 已下载量，支持 percent/absolute 模式
+# - relevance: 文件关联度 (0.0-1.0)
+# - active_time: 种子活动时间，支持 s/m/h/d 单位
+#
+# 绝对值支持的单位: B, KB, MB, GB, TB
+# =============================================
