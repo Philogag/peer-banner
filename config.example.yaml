@@ -39,65 +39,90 @@ output:
   format: "peerbanana"
 
 # 吸血判定规则配置
-# 使用 AND 组合：用户必须同时满足所有 criteria 条件才会被判定为吸血用户
+# 使用 AND 组合：用户必须同时满足所有 filter 条件才会被判定为吸血用户
 rules:
   # 规则 1: 下载超过 1GB 但上传低于 50%
   - name: "low_share_leecher"
     enabled: true
     action: "ban"
-    criteria:
-      downloaded:
-        mode: "absolute"
-        min: "1GB"
-      uploaded:
-        mode: "percent"
-        max: "50%"
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "1GB"
+      - field: "uploaded"
+        operator: "<"
+        value: "50%"
 
   # 规则 2: 进度达到 99%+ 但上传不足 20%
   - name: "completed_low_upload"
     enabled: true
     action: "ban"
-    criteria:
-      progress:
-        min: 99
-      uploaded:
-        mode: "percent"
-        max: "20%"
-      relevance:
-        max: 0.3
+    filter:
+      - field: "progress"
+        operator: ">="
+        value: "99"
+      - field: "uploaded"
+        operator: "<"
+        value: "20%"
+      - field: "relevance"
+        operator: "<"
+        value: "0.3"
 
   # 规则 3: 活动超过 24 小时但上传不足 1%
   - name: "stalled_seeder"
     enabled: true
     action: "ban"
-    criteria:
-      active_time:
-        min: "24h"
-      uploaded:
-        mode: "percent"
-        max: "1%"
+    filter:
+      - field: "active_time"
+        operator: ">="
+        value: "24h"
+      - field: "uploaded"
+        operator: "<"
+        value: "1%"
 
   # 规则 4: 使用加密协议且进度长期停滞
   - name: "encrypted_stalled"
     enabled: false
     action: "ban"
-    criteria:
-      flag:
-        - "encrypted"
-      progress:
-        max: 5
-      active_time:
-        min: "1h"
+    filter:
+      - field: "flag"
+        operator: "include"
+        value: "encrypted"
+      - field: "progress"
+        operator: "<"
+        value: "5"
+      - field: "active_time"
+        operator: ">="
+        value: "1h"
+
+  # 规则 5: 排除 I2P 用户（仅作为示例）
+  - name: "not_i2p_users"
+    enabled: false
+    action: "ban"
+    filter:
+      - field: "flag"
+        operator: "exclude"
+        value: "i2p"
 
 # =============================================
-# 过滤指标说明:
+# 过滤条件说明:
 # =============================================
-# - flag: 检测特定BT协议flag（encrypted, i2p, pex, dht等）
-# - progress: 客户端下载进度百分比 (0-100)
-# - uploaded: 已上传量，支持 percent/absolute 模式
-# - downloaded: 已下载量，支持 percent/absolute 模式
-# - relevance: 文件关联度 (0.0-1.0)
-# - active_time: 种子活动时间，支持 s/m/h/d 单位
+# 每项 filter 包含:
+#   - field: 过滤字段 (progress, uploaded, downloaded, relevance, active_time, flag)
+#   - operator: 操作符 (<, >, <=, >=, include, exclude)
+#   - value: 值（自动识别单位）
 #
-# 绝对值支持的单位: B, KB, MB, GB, TB
+# 支持的字段:
+#   - progress: 客户端下载进度百分比 (0-100)
+#   - uploaded: 已上传量，支持 50% 或 1GB 等格式
+#   - downloaded: 已下载量，支持 50% 或 1GB 等格式
+#   - relevance: 文件关联度 (0.0-1.0)
+#   - active_time: 活动时间，支持 24h, 7d, 1h30m 等格式
+#   - flag: 客户端标志 (encrypted, i2p, pex, dht 等)
+#
+# 值格式:
+#   - 百分比: 50%, 0.5%
+#   - 字节: 1GB, 512KB, 100MB, 2TB
+#   - 时间: 24h (小时), 7d (天), 1h30m (复合)
+#   - 数值: 99, 0.3
 # =============================================

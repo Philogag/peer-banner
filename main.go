@@ -69,7 +69,7 @@ func main() {
 		}
 
 		detectors = append(detectors, d)
-		log.Printf("Connected to qBittorrent server: %s (%s)", serverCfg.Name, serverCfg.URL)
+		log.Printf("Connected to qBittorrent server: %s", serverCfg.Name)
 	}
 
 	if len(detectors) == 0 {
@@ -88,7 +88,7 @@ func runDetection(detectors []*detector.Detector, writer *output.DATWriter, dryR
 	var totalBanned int
 
 	for _, d := range detectors {
-		log.Printf("Running detection on %s...", d)
+		log.Printf("Running detection on %s...", d.Name())
 
 		result, err := d.Detect()
 		if err != nil {

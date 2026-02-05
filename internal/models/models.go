@@ -30,9 +30,9 @@ type Torrent struct {
 	NumLeechers  int      `json:"num_leechers"`
 	SavePath     string   `json:"save_path,omitempty"`
 	Category     string   `json:"category,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	AddedOn      time.Time `json:"added_on,omitempty"`
-	CompletionOn time.Time `json:"completion_on,omitempty"`
+	Tags         string `json:"tags,omitempty"`
+	AddedOn      int64 `json:"added_on,omitempty"`
+	CompletionOn int64 `json:"completion_on,omitempty"`
 }
 
 // BannedIP represents a banned IP entry

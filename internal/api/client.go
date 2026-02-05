@@ -15,6 +15,7 @@ import (
 
 // Client wraps qBittorrent Web API client
 type Client struct {
+	name     string
 	baseURL  string
 	username string
 	password string
@@ -25,6 +26,7 @@ type Client struct {
 // NewClient creates a new qBittorrent API client
 func NewClient(cfg *config.ServerConfig) *Client {
 	return &Client{
+		name:     cfg.Name,
 		baseURL:  cfg.URL,
 		username: cfg.Username,
 		password: cfg.Password,
@@ -197,5 +199,5 @@ func (c *Client) GetAllPeers() (map[string][]models.Peer, error) {
 
 // Name returns the server name (for logging)
 func (c *Client) Name() string {
-	return c.username + "@" + c.baseURL
+	return c.name
 }

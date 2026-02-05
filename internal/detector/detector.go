@@ -160,3 +160,8 @@ func (d *Detector) Detect() (*models.DetectionResult, error) {
 func (d *Detector) GetRuleCount() int {
 	return len(d.rules)
 }
+
+// Name returns the server name (for logging)
+func (d *Detector) Name() string {
+	return d.client.Name()
+}

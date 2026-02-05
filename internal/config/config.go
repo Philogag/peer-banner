@@ -44,47 +44,17 @@ type OutputConfig struct {
 
 // RuleConfig represents a leecher detection rule
 type RuleConfig struct {
-	Name     string          `yaml:"name"`
-	Enabled  bool            `yaml:"enabled"`
-	Action   string          `yaml:"action"`
-	Criteria CriteriaConfig  `yaml:"criteria"`
+	Name    string        `yaml:"name"`
+	Enabled bool          `yaml:"enabled"`
+	Action  string        `yaml:"action"`
+	Filters []FilterConfig `yaml:"filter"`
 }
 
-// CriteriaConfig defines filtering criteria
-type CriteriaConfig struct {
-	Flag       []string         `yaml:"flag,omitempty"`
-	Progress   *ProgressCriteria  `yaml:"progress,omitempty"`
-	Uploaded   *BytesCriteria     `yaml:"uploaded,omitempty"`
-	Downloaded *BytesCriteria     `yaml:"downloaded,omitempty"`
-	Relevance  *RangeCriteria     `yaml:"relevance,omitempty"`
-	ActiveTime *TimeCriteria       `yaml:"active_time,omitempty"`
-}
-
-// ProgressCriteria defines progress percentage criteria
-type ProgressCriteria struct {
-	Min float64 `yaml:"min,omitempty"`
-	Max float64 `yaml:"max,omitempty"`
-}
-
-// BytesCriteria defines byte size criteria
-type BytesCriteria struct {
-	Mode         string  `yaml:"mode,omitempty"`
-	Min          string  `yaml:"min,omitempty"`
-	Max          string  `yaml:"max,omitempty"`
-	MinPercent   float64 `yaml:"min_percent,omitempty"`
-	MaxPercent   float64 `yaml:"max_percent,omitempty"`
-}
-
-// RangeCriteria defines a value range criteria
-type RangeCriteria struct {
-	Min float64 `yaml:"min,omitempty"`
-	Max float64 `yaml:"max,omitempty"`
-}
-
-// TimeCriteria defines time duration criteria
-type TimeCriteria struct {
-	Min string `yaml:"min,omitempty"`
-	Max string `yaml:"max,omitempty"`
+// FilterConfig defines a single filter condition
+type FilterConfig struct {
+	Field    string `yaml:"field"`
+	Operator string `yaml:"operator"` // <, >, <=, >=, include, exclude
+	Value    string `yaml:"value"`
 }
 
 // GetInterval returns the check interval as a duration

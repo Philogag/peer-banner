@@ -29,7 +29,7 @@ qbittorrent-banner/
 │   │   └── detector.go
 │   ├── rules/              # 判定规则实现
 │   │   ├── rule.go         # 规则接口
-│   │   └── criteria.go     # 条件定义
+│   │   └── filter.go       # 过滤条件定义
 │   └── output/             # 输出处理器
 │       └── dat_writer.go   # DAT文件生成
 └── docs/
@@ -72,37 +72,40 @@ rules:
   - name: "low_share_leecher"
     enabled: true
     action: "ban"
-    criteria:
-      downloaded:
-        mode: "absolute"
-        min: "1GB"
-      uploaded:
-        mode: "percent"
-        max: "50%"
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "1GB"
+      - field: "uploaded"
+        operator: "<"
+        value: "50%"
 
   # 规则2: 进度达到100%但上传极低
   - name: "completed_low_upload"
     enabled: true
     action: "ban"
-    criteria:
-      progress:
-        min: 99
-      uploaded:
-        mode: "percent"
-        max: "20%"
-      relevance:
-        max: 0.3
+    filter:
+      - field: "progress"
+        operator: ">="
+        value: "99"
+      - field: "uploaded"
+        operator: "<"
+        value: "20%"
+      - field: "relevance"
+        operator: "<"
+        value: "0.3"
 
   # 规则3: 长时间挂机不活跃上传
   - name: "stalled_seeder"
     enabled: true
     action: "ban"
-    criteria:
-      active_time:
-        min: "24h"
-      uploaded:
-        mode: "percent"
-        max: "1%"
+    filter:
+      - field: "active_time"
+        operator: ">="
+        value: "24h"
+      - field: "uploaded"
+        operator: "<"
+        value: "1%"
 ```
 
 ---
@@ -120,115 +123,77 @@ rules:
     enabled: true
     # 触发动作：ban（加入黑名单）、warn（仅记录）
     action: "ban"
-    # 判定条件（所有条件需同时满足）
-    criteria:
-      # 以下任一条件满足即触发
+    # 过滤条件（所有条件需同时满足）
+    filter:
+      - field: "progress"     # 过滤字段
+        operator: "<"         # 操作符
+        value: "10"           # 值（自动识别单位）
 ```
 
-## 支持的过滤指标 (Criteria)
+## 过滤条件结构 (Filter)
 
-每个规则的 `criteria` 字段可以组合使用以下指标：
+每个过滤条件包含以下字段：
 
-### 1. 特定 Flag 存在 (flag)
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `field` | 是 | 过滤指标字段名 |
+| `operator` | 是 | 操作符：`<`, `>`, `<=`, `>=`, `include`, `exclude` |
+| `value` | 是 | 值，自动识别百分比或字节单位 |
 
-检测 peer 是否包含指定的 qBittorrent flag。
+### 支持的字段 (Field)
 
+| 字段 | 说明 | 值示例 |
+|------|------|--------|
+| `progress` | 下载进度 (0-100) | `"50"`, `"99.5"` |
+| `uploaded` | 已上传字节量/百分比 | `"50%"`, `"1GB"`, `"512KB"` |
+| `downloaded` | 已下载字节量/百分比 | `"1GB"`, `"50%"` |
+| `relevance` | 文件关联度 (0-1) | `"0.3"`, `"0.5"` |
+| `active_time` | 活动时间 | `"24h"`, `"7d"`, `"1h30m"` |
+| `flag` | 客户端标志 | `"encrypted"`, `"i2p"` |
+
+### 支持的操作符 (Operator)
+
+| 操作符 | 说明 | 适用类型 |
+|--------|------|----------|
+| `<` | 小于 | 数值、百分比、字节 |
+| `>` | 大于 | 数值、百分比、字节 |
+| `<=` | 小于等于 | 数值、百分比、字节 |
+| `>=` | 大于等于 | 数值、百分比、字节 |
+| `include` | 包含 | 字符串、列表 |
+| `exclude` | 不包含 | 字符串、列表 |
+
+### 值格式 (Value)
+
+#### 百分比
+直接使用数字加 `%` 后缀：
 ```yaml
-criteria:
-  flag:
-    - "encrypted"      # BT 加密连接
-    - "i2p"            # I2P 网络
-    - "pex"            # PEX 已启用
-    - "dht"            # DHT 已启用
-    - "lt_pex"         # LPEX 已启用
-    - "ut_pex"         # uTPEX 已启用
-    - "ssl"            # SSL 加密
+value: "50%"      # 50%
+value: "0.5%"     # 0.5%
 ```
 
-**匹配逻辑**：peer 包含列表中任一 flag 即满足该条件。
-
-### 2. 客户端进度 (progress)
-
-检测 peer 的下载进度百分比。
-
+#### 字节单位
+支持 `B`, `KB`, `MB`, `GB`, `TB`：
 ```yaml
-criteria:
-  progress:
-    min: 0.0           # 最小进度 (0-100%)
-    max: 10.0          # 最大进度
+value: "1GB"      # 1 GB
+value: "512KB"    # 512 KB
+value: "100MB"    # 100 MB
+value: "2TB"      # 2 TB
 ```
 
-**匹配逻辑**：`min <= peer.progress <= max`
-
-### 3. 客户端已上传 (uploaded)
-
-检测 peer 已上传的字节量，支持**百分比阈值**或**绝对值**。
-
+#### 时间单位
+支持 `s`(秒), `m`(分钟), `h`(小时), `d`(天)：
 ```yaml
-# 百分比模式（相对于种子总大小）
-criteria:
-  uploaded:
-    mode: "percent"    # 模式：percent 或 absolute
-    min_percent: 0      # 最小上传百分比
-    max_percent: 5      # 最大上传百分比
-
-# 绝对值模式
-criteria:
-  uploaded:
-    mode: "absolute"
-    min: "0"           # 最小上传量
-    max: "50MB"         # 最大上传量
+value: "24h"      # 24 小时
+value: "7d"       # 7 天
+value: "1h30m"    # 1 小时 30 分钟
 ```
 
-**支持的单位**：B, KB, MB, GB, TB
-
-**百分比计算**：`uploaded / torrent_size * 100`
-
-### 4. 客户端已下载 (downloaded)
-
-检测 peer 已下载的字节量，支持**百分比阈值**或**绝对值**。
-
+#### 数值
+直接使用数字（用于 progress, relevance 等）：
 ```yaml
-# 百分比模式
-criteria:
-  downloaded:
-    mode: "percent"
-    min_percent: 50     # 最小下载百分比
-    max_percent: 100    # 最大下载百分比
-
-# 绝对值模式
-criteria:
-  downloaded:
-    mode: "absolute"
-    min: "1GB"          # 最小下载量
-    max: "1TB"          # 最大下载量
+value: "99"       # 进度 99
+value: "0.3"      # 关联度 0.3
 ```
-
-### 5. 文件关联度 (relevance)
-
-检测 peer 对种子的文件关联度/分享率 (0.0 - 1.0)。
-
-```yaml
-criteria:
-  relevance:
-    min: 0.0           # 最小关联度
-    max: 0.3           # 最大关联度
-```
-
-**说明**：关联度表示 peer 拥有的稀缺块比例，越低说明该 peer 拥有的块越普遍。
-
-### 6. 种子活动时间 (active_time)
-
-检测 peer 在种子上的活动时长。
-
-```yaml
-criteria:
-  active_time:
-    min: "1h"          # 最小活动时间
-    max: "7d"          # 最大活动时间
-```
-
-**支持单位**：`s`(秒), `m`(分钟), `h`(小时), `d`(天)
 
 ---
 
@@ -243,13 +208,13 @@ rules:
   - name: "download_high_upload_low"
     enabled: true
     action: "ban"
-    criteria:
-      downloaded:
-        mode: "percent"
-        min_percent: 50
-      uploaded:
-        mode: "percent"
-        max_percent: 5
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "50%"
+      - field: "uploaded"
+        operator: "<"
+        value: "5%"
 ```
 
 ### 示例 2：检测长时间挂机但贡献极低的用户
@@ -259,14 +224,16 @@ rules:
   - name: "long_active_low_share"
     enabled: true
     action: "ban"
-    criteria:
-      active_time:
-        min: "24h"           # 超过 24 小时
-      progress:
-        min: 80              # 进度超过 80%
-      uploaded:
-        mode: "percent"
-        max_percent: 10     # 但上传不足 10%
+    filter:
+      - field: "active_time"
+        operator: ">="
+        value: "24h"           # 超过 24 小时
+      - field: "progress"
+        operator: ">="
+        value: "80"            # 进度超过 80%
+      - field: "uploaded"
+        operator: "<"
+        value: "10%"           # 但上传不足 10%
 ```
 
 ### 示例 3：检测已下载大量资源但几乎不上传的用户
@@ -276,13 +243,13 @@ rules:
   - name: "heavy_download_no_upload"
     enabled: true
     action: "ban"
-    criteria:
-      downloaded:
-        mode: "absolute"
-        min: "5GB"           # 下载超过 5GB
-      uploaded:
-        mode: "absolute"
-        max: "512KB"         # 上传不足 512KB
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "5GB"           # 下载超过 5GB
+      - field: "uploaded"
+        operator: "<"
+        value: "512KB"         # 上传不足 512KB
 ```
 
 ### 示例 4：检测使用加密连接但进度长期停滞的用户
@@ -292,13 +259,16 @@ rules:
   - name: "encrypted_stalled"
     enabled: false
     action: "ban"
-    criteria:
-      flag:
-        - "encrypted"
-      progress:
-        max: 1               # 进度小于 1%
-      active_time:
-        min: "1h"            # 连接超过 1 小时
+    filter:
+      - field: "flag"
+        operator: "include"
+        value: "encrypted"     # 使用加密连接
+      - field: "progress"
+        operator: "<"
+        value: "1"             # 进度小于 1%
+      - field: "active_time"
+        operator: ">="
+        value: "1h"            # 连接超过 1 小时
 ```
 
 ### 示例 5：检测关联度低且上传贡献极差的用户
@@ -308,15 +278,35 @@ rules:
   - name: "low_relevance_low_upload"
     enabled: true
     action: "ban"
-    criteria:
-      relevance:
-        max: 0.2             # 关联度低于 20%
-      uploaded:
-        mode: "percent"
-        max_percent: 10     # 上传低于 10%
-      downloaded:
-        mode: "percent"
-        min_percent: 50    # 下载超过 50%
+    filter:
+      - field: "relevance"
+        operator: "<"
+        value: "0.2"           # 关联度低于 20%
+      - field: "uploaded"
+        operator: "<"
+        value: "10%"           # 上传低于 10%
+      - field: "downloaded"
+        operator: ">="
+        value: "50%"           # 下载超过 50%
+```
+
+### 示例 6：排除特定标志的用户
+
+```yaml
+rules:
+  - name: "not_i2p_users"
+    enabled: true
+    action: "ban"
+    filter:
+      - field: "flag"
+        operator: "exclude"
+        value: "i2p"           # 排除 I2P 用户
+      - field: "progress"
+        operator: "<"
+        value: "10"
+      - field: "active_time"
+        operator: ">="
+        value: "2h"
 ```
 
 ---
@@ -338,16 +328,9 @@ rules:
 | `rules[].name` | string | 规则标识符 |
 | `rules[].enabled` | bool | 是否启用 |
 | `rules[].action` | string | 触发动作 (ban/warn) |
-| `rules[].criteria.flag` | []string | 需要检测的 flag 列表 |
-| `rules[].criteria.progress.min/max` | float | 进度百分比范围 (0-100) |
-| `rules[].criteria.uploaded.mode` | string | 上传量模式 (percent/absolute) |
-| `rules[].criteria.uploaded.min/max_percent` | float | 上传百分比范围 |
-| `rules[].criteria.uploaded.min/max` | string | 上传字节数范围 (带单位) |
-| `rules[].criteria.downloaded.mode` | string | 下载量模式 (percent/absolute) |
-| `rules[].criteria.downloaded.min/max_percent` | float | 下载百分比范围 |
-| `rules[].criteria.downloaded.min/max` | string | 下载字节数范围 (带单位) |
-| `rules[].criteria.relevance.min/max` | float | 文件关联度范围 (0-1) |
-| `rules[].criteria.active_time.min/max` | string | 活动时长范围 (带单位) |
+| `rules[].filter[].field` | string | 过滤字段名 |
+| `rules[].filter[].operator` | string | 操作符 |
+| `rules[].filter[].value` | string | 值（自动识别单位） |
 
 ---
 
@@ -356,27 +339,24 @@ rules:
 ### 规则接口
 
 ```go
-type Criteria interface {
+type Filter interface {
     // 检查 peer 是否满足该条件
     Match(peer *Peer, torrent *Torrent) bool
 }
 
 // Rule 定义吸血判定规则
 type Rule struct {
-    Name      string            `yaml:"name"`
-    Enabled   bool              `yaml:"enabled"`
-    Action    string            `yaml:"action"` // ban, warn
-    Criteria  []CriteriaConfig   `yaml:"criteria"`
+    Name     string        `yaml:"name"`
+    Enabled  bool          `yaml:"enabled"`
+    Action   string        `yaml:"action"` // ban, warn
+    Filters  []FilterConfig `yaml:"filter"`
 }
 
-// CriteriaConfig 配置化的条件
-type CriteriaConfig struct {
-    Flag        []string            `yaml:"flag,omitempty"`
-    Progress    *ProgressCriteria   `yaml:"progress,omitempty"`
-    Uploaded    *BytesCriteria      `yaml:"uploaded,omitempty"`
-    Downloaded  *BytesCriteria      `yaml:"downloaded,omitempty"`
-    Relevance   *RangeCriteria      `yaml:"relevance,omitempty"`
-    ActiveTime  *TimeCriteria       `yaml:"active_time,omitempty"`
+// FilterConfig 配置化的过滤条件
+type FilterConfig struct {
+    Field    string `yaml:"field"`
+    Operator string `yaml:"operator"` // <, >, <=, >=, include, exclude
+    Value    string `yaml:"value"`
 }
 ```
 
@@ -387,7 +367,7 @@ type CriteriaConfig struct {
 2. 获取每个种子的 peer 信息
 3. 遍历每个 peer，应用所有规则
 4. 对于每个规则：
-   a. 检查 peer 是否满足该规则的所有 criteria（AND 组合）
+   a. 检查 peer 是否满足该规则的所有 filter（AND 组合）
    b. 如果满足，将该 peer 标记为吸血用户
 5. 收集所有被标记的 IP
 6. 生成 DAT 文件
@@ -491,18 +471,27 @@ qBittorrent Web API:
 
 ### 添加新的过滤指标
 
-1. 在 `CriteriaConfig` 结构体中添加新字段
-2. 实现 `Criteria` 接口
+1. 在 `FilterConfig` 结构体中添加新字段
+2. 实现 `Filter` 接口
 3. 在检测引擎中注册新指标
 
 ```go
-// 示例：添加新的 Criteria
-type MyCriteria struct {
+// 示例：添加新的 Filter
+type MyFilter struct {
     Threshold float64 `yaml:"threshold"`
+    Operator  string  `yaml:"operator"`
 }
 
-func (c *MyCriteria) Match(peer *Peer, torrent *Torrent) bool {
-    return peer.SomeValue < c.Threshold
+func (f *MyFilter) Match(peer *Peer, torrent *Torrent) bool {
+    // 根据 operator 进行比较
+    switch f.Operator {
+    case "<":
+        return peer.SomeValue < f.Threshold
+    case ">":
+        return peer.SomeValue > f.Threshold
+    // ... 其他操作符
+    }
+    return false
 }
 ```
 
@@ -546,13 +535,13 @@ rules:
   - name: "low_share"
     enabled: true
     action: "ban"
-    criteria:
-      downloaded:
-        mode: "absolute"
-        min: "1GB"
-      uploaded:
-        mode: "percent"
-        max: "50%"
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "1GB"
+      - field: "uploaded"
+        operator: "<"
+        value: "50%"
 ```
 
 ### 运行容器
@@ -605,7 +594,7 @@ docker-compose restart
 docker build -t qbittorrent-banner:latest --platform linux/arm64 .
 
 # 或者使用 Buildx
-docker buildx build -t qbittorrent-banner:latest --platform linux/amd64,linux/arm64 .
+docker buildx build -t qbittorrent-banner:latest --platform amd64,arm64 .
 ```
 
 ### 定时任务（可选）
