@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/philogag/peer-banner/internal/api"
+	"github.com/philogag/peer-banner/internal/ban"
 	"github.com/philogag/peer-banner/internal/config"
 	"github.com/philogag/peer-banner/internal/models"
 	"github.com/philogag/peer-banner/internal/rules"
@@ -16,9 +17,10 @@ import (
 
 // Detector is the leecher detection engine
 type Detector struct {
-	client    *api.Client
-	rules     []*rules.Rule
-	whitelist Whitelist
+	client     *api.Client
+	rules      []*rules.Rule
+	whitelist  Whitelist
+	banManager *ban.Manager
 }
 
 // Whitelist represents an IP whitelist
@@ -27,7 +29,7 @@ type Whitelist struct {
 }
 
 // NewDetector creates a new detection engine
-func NewDetector(client *api.Client, ruleConfigs []config.RuleConfig, whitelistCfg config.WhitelistConfig) (*Detector, error) {
+func NewDetector(client *api.Client, ruleConfigs []config.RuleConfig, whitelistCfg config.WhitelistConfig, banManager *ban.Manager) (*Detector, error) {
 	// Parse rules
 	var parsedRules []*rules.Rule
 	for _, rc := range ruleConfigs {
@@ -41,9 +43,10 @@ func NewDetector(client *api.Client, ruleConfigs []config.RuleConfig, whitelistC
 	}
 
 	return &Detector{
-		client:    client,
-		rules:     parsedRules,
-		whitelist: parseWhitelist(whitelistCfg.IPs),
+		client:     client,
+		rules:      parsedRules,
+		whitelist:  parseWhitelist(whitelistCfg.IPs),
+		banManager: banManager,
 	}, nil
 }
 
@@ -88,6 +91,14 @@ func (d *Detector) Detect() (*models.DetectionResult, error) {
 	result := models.NewDetectionResult()
 	result.ServerName = d.client.Name()
 	result.Timestamp = time.Now()
+
+	// Cleanup expired bans before detection
+	if d.banManager != nil {
+		cleaned := d.banManager.CleanupExpired()
+		if cleaned > 0 {
+			log.Printf("[%s] Cleaned up %d expired bans", d.client.Name(), cleaned)
+		}
+	}
 
 	// Get all peers from all torrents
 	torrents, err := d.client.GetTorrents()
@@ -135,11 +146,27 @@ func (d *Detector) Detect() (*models.DetectionResult, error) {
 					continue
 				}
 
+				// Check if already banned (and not expired)
+				if d.banManager != nil && d.banManager.IsBanned(ip) {
+					mu.Lock()
+					result.TotalAlreadyBanned++
+					mu.Unlock()
+					continue
+				}
+
 				// Check against all rules
 				for _, rule := range d.rules {
 					if rule.Match(&peer, &t) {
+						reason := "Matched rule: " + rule.Name
+
+						// Add ban with duration
+						if d.banManager != nil {
+							duration := rule.GetBanDuration()
+							d.banManager.AddBan(ip, reason, rule.Name, duration, rule.GetMaxBanCount())
+						}
+
 						mu.Lock()
-						result.AddBannedIP(ip, "Matched rule: "+rule.Name, rule.Name)
+						result.AddBannedIP(ip, reason, rule.Name)
 						result.TotalBanned++
 						log.Printf("[%s] Banned %s (rule: %s, progress: %.1f%%, uploaded: %d)",
 							d.client.Name(), ip, rule.Name, peer.Progress*100, peer.Uploaded)
@@ -152,6 +179,13 @@ func (d *Detector) Detect() (*models.DetectionResult, error) {
 	}
 
 	wg.Wait()
+
+	// Save ban state after detection
+	if d.banManager != nil {
+		if err := d.banManager.Save(); err != nil {
+			log.Printf("[%s] Failed to save ban state: %v", d.client.Name(), err)
+		}
+	}
 
 	return result, nil
 }

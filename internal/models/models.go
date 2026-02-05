@@ -35,21 +35,14 @@ type Torrent struct {
 	CompletionOn int64 `json:"completion_on,omitempty"`
 }
 
-// BannedIP represents a banned IP entry
-type BannedIP struct {
-	IP       string    `json:"ip"`
-	Reason   string    `json:"reason,omitempty"`
-	RuleName string    `json:"rule_name,omitempty"`
-	BannedAt time.Time `json:"banned_at"`
-}
-
 // DetectionResult contains the result of a detection run
 type DetectionResult struct {
-	BannedIPs    map[string]*BannedIP
-	TotalPeers    int
-	TotalBanned   int
-	ServerName    string
-	Timestamp     time.Time
+	BannedIPs          map[string]*BannedIP
+	TotalPeers         int
+	TotalBanned        int
+	TotalAlreadyBanned  int
+	ServerName         string
+	Timestamp          time.Time
 }
 
 // NewDetectionResult creates a new detection result

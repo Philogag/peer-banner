@@ -43,9 +43,10 @@ qbittorrent-banner/
 ```yaml
 # 应用基础配置
 app:
-  interval: 30          # 检查间隔（分钟）
-  log_level: info      # debug/info/warn/error
-  dry_run: false        # 试运行模式，不写入文件
+  interval: 30             # 检查间隔（分钟）
+  log_level: info          # debug/info/warn/error
+  dry_run: false           # 试运行模式，不写入文件
+  state_file: bans.json    # 封禁状态文件路径
 
 # qBittorrent 服务器配置
 servers:
@@ -64,13 +65,15 @@ whitelist:
 # 输出配置
 output:
   dat_file: "/var/lib/qbittorrent/noLeech.dat"
-  format: "peerbanana"  # peerbanana / plain
+  format: "peerbanana"     # peerbanana / plain
 
 # 吸血判定规则配置
 rules:
-  # 规则1: 低分享率吸血用户
+  # 规则1: 低分享率吸血用户（首次封禁24小时，3次后永封）
   - name: "low_share_leecher"
     enabled: true
+    ban_duration: 24h      # 封禁时长（24小时）
+    max_ban_count: 3       # 达到3次后永久封禁
     action: "ban"
     filter:
       - field: "downloaded"
@@ -80,9 +83,11 @@ rules:
         operator: "<"
         value: "50%"
 
-  # 规则2: 进度达到100%但上传极低
+  # 规则2: 进度达到100%但上传极低（封禁7天）
   - name: "completed_low_upload"
     enabled: true
+    ban_duration: 168h     # 7天
+    max_ban_count: 0        # 不启用自动永封
     action: "ban"
     filter:
       - field: "progress"
@@ -95,17 +100,30 @@ rules:
         operator: "<"
         value: "0.3"
 
-  # 规则3: 长时间挂机不活跃上传
-  - name: "stalled_seeder"
+  # 规则3: 永久封禁（不设置 ban_duration 或设为 0）
+  - name: "fake_client"
     enabled: true
+    ban_duration: 0         # 永久封禁
+    max_ban_count: 0
     action: "ban"
     filter:
-      - field: "active_time"
-        operator: ">="
-        value: "24h"
+      - field: "client"
+        operator: "include"
+        value: "FakeClient"
+
+  # 规则4: 轻度警告（封禁1小时，多次后永封）
+  - name: "minor_infractor"
+    enabled: true
+    ban_duration: 1h        # 1小时
+    max_ban_count: 5        # 5次后永封
+    action: "ban"
+    filter:
+      - field: "progress"
+        operator: "<"
+        value: "10"
       - field: "uploaded"
         operator: "<"
-        value: "1%"
+        value: "100MB"
 ```
 
 ---
@@ -628,3 +646,216 @@ services:
 ## 许可证
 
 MIT License
+
+---
+
+## 封禁时长功能 (Ban Duration)
+
+### 功能概述
+
+支持配置 IP 封禁时长，到期后自动解除封禁，无需手动管理。
+
+### 配置示例
+
+```yaml
+rules:
+  # 规则1: 临时封禁 24 小时
+  - name: "low_share_leecher"
+    enabled: true
+    ban_duration: 24h      # 封禁 24 小时
+    action: "ban"
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "1GB"
+      - field: "uploaded"
+        operator: "<"
+        value: "50%"
+
+  # 规则2: 永久封禁
+  - name: "permanent_ban"
+    enabled: true
+    ban_duration: 0        # 0 或留空表示永久封禁
+    action: "ban"
+    filter:
+      - field: "client"
+        operator: "include"
+        value: "FakeClient"
+
+  # 规则3: 封禁 7 天
+  - name: "zero_uploader"
+    enabled: true
+    ban_duration: 168h      # 7 天 = 168 小时
+    action: "ban"
+    filter:
+      - field: "uploaded"
+        operator: "=="
+        value: "0"
+```
+
+### 时长格式
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| 小时 | `24h` | 24 小时 |
+| 分钟 | `30m` | 30 分钟 |
+| 天 | `7d` | 7 天 |
+| 周 | `2w` | 2 周 |
+| 永久 | `0` 或留空 | 永不解封 |
+
+### 状态文件
+
+系统会自动生成 `bans.json` 文件记录封禁状态：
+
+```json
+{
+  "version": 1,
+  "last_updated": "2026-02-05T10:00:00Z",
+  "bans": {
+    "192.168.1.100": {
+      "ip": "192.168.1.100",
+      "reason": "Matched rule: low_share_leecher",
+      "rule_name": "low_share_leecher",
+      "banned_at": "2026-02-05T08:00:00Z",
+      "expires_at": "2026-02-06T08:00:00Z"
+    },
+    "192.168.1.101": {
+      "ip": "192.168.1.101",
+      "reason": "Matched rule: permanent_ban",
+      "rule_name": "permanent_ban",
+      "banned_at": "2026-02-05T08:00:00Z",
+      "expires_at": "0001-01-01T00:00:00Z"
+    }
+  }
+}
+```
+
+### 工作流程
+
+```
+1. 启动时加载 bans.json，读取所有封禁记录
+2. 检测时跳过已过期的 IP（仅保留未过期的到新结果）
+3. 新封禁的 IP 根据规则配置写入 expires_at
+4. 每次检测后更新 bans.json 文件
+```
+
+### 新增配置项
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `app.state_file` | string | `bans.json` | 封禁状态文件路径 |
+| `rules[].ban_duration` | string | `0` (永久) | 封禁时长 |
+| `rules[].max_ban_count` | int | `0` | 达到此封禁次数后永封，0表示不禁用 |
+
+---
+
+## 自动永封功能 (Escalate to Permanent Ban)
+
+### 功能概述
+
+当某个 IP 被临时封禁达到指定次数后，自动升级为永久封禁。适用于屡教不改的吸血用户。
+
+### 配置示例
+
+```yaml
+rules:
+  # 规则1: 首次封禁24小时，3次后永封
+  - name: "low_share_leecher"
+    enabled: true
+    ban_duration: 24h        # 首次封禁 24 小时
+    max_ban_count: 3         # 3 次后永久封禁
+    action: "ban"
+    filter:
+      - field: "downloaded"
+        operator: ">="
+        value: "1GB"
+      - field: "uploaded"
+        operator: "<"
+        value: "50%
+
+  # 规则2: 首次封禁1小时，5次后永封
+  - name: "temporary_warner"
+    enabled: true
+    ban_duration: 1h         # 首次封禁 1 小时
+    max_ban_count: 5         # 5 次后永久封禁
+    action: "ban"
+    filter:
+      - field: "progress"
+        operator: "<"
+        value: "10"
+
+  # 规则3: 不使用自动永封功能
+  - name: "always_temporary"
+    enabled: true
+    ban_duration: 24h
+    max_ban_count: 0         # 0 表示禁用此功能，永远临时封禁
+    action: "ban"
+    filter:
+      - field: "uploaded"
+        operator: "=="
+        value: "0"
+```
+
+### 行为说明
+
+| 场景 | 行为 |
+|------|------|
+| IP 首次被封禁 | 按 `ban_duration` 封禁 |
+| 第 2 次被封禁 | 再次按 `ban_duration` 封禁 |
+| 达到 `max_ban_count` 次 | 永久封禁（`expires_at` 为空） |
+| `max_ban_count` 为 0 | 每次都是临时封禁，永不永封 |
+
+### 状态文件扩展
+
+```json
+{
+  "version": 2,
+  "last_updated": "2026-02-05T10:00:00Z",
+  "bans": {
+    "192.168.1.100": {
+      "ip": "192.168.1.100",
+      "reason": "Matched rule: low_share_leecher",
+      "rule_name": "low_share_leecher",
+      "banned_at": "2026-02-05T08:00:00Z",
+      "expires_at": "2026-02-05T09:00:00Z",
+      "ban_count": 1,
+      "is_permanent": false
+    },
+    "192.168.1.101": {
+      "ip": "192.168.1.101",
+      "reason": "Escalated to permanent ban after 3 violations",
+      "rule_name": "low_share_leecher",
+      "banned_at": "2026-02-04T08:00:00Z",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "ban_count": 3,
+      "is_permanent": true
+    }
+  }
+}
+```
+
+### 新增字段说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ban_count` | int | 该 IP 被封禁的累计次数 |
+| `is_permanent` | bool | 是否已升级为永久封禁 |
+| `version` | int | 状态文件版本，升级后为 2 |
+
+### 升级路径
+
+```
+ban_count: 1 ──封禁 24h──▶ ban_count: 2 ──封禁 24h──▶ ban_count: 3 (永封)
+                                                                 │
+                                                                 ▼
+                                                      is_permanent: true
+                                                      expires_at: null
+```
+
+### 完整配置项
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `app.state_file` | string | `bans.json` | 封禁状态文件路径 |
+| `rules[].ban_duration` | string | `0` (永久) | 封禁时长 |
+| `rules[].max_ban_count` | int | `0` | 达到此次数后永封，0表示禁用 |

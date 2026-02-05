@@ -7,6 +7,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Default values
+const (
+	DefaultStateFile = "bans.json"
+)
+
 // Config represents the application configuration
 type Config struct {
 	App       AppConfig       `yaml:"app"`
@@ -18,9 +23,10 @@ type Config struct {
 
 // AppConfig contains application-level settings
 type AppConfig struct {
-	Interval int    `yaml:"interval"`
-	LogLevel string `yaml:"log_level"`
-	DryRun   bool   `yaml:"dry_run"`
+	Interval   int    `yaml:"interval"`
+	LogLevel   string `yaml:"log_level"`
+	DryRun     bool   `yaml:"dry_run"`
+	StateFile  string `yaml:"state_file"`
 }
 
 // ServerConfig represents a qBittorrent server
@@ -44,10 +50,12 @@ type OutputConfig struct {
 
 // RuleConfig represents a leecher detection rule
 type RuleConfig struct {
-	Name    string        `yaml:"name"`
-	Enabled bool          `yaml:"enabled"`
-	Action  string        `yaml:"action"`
-	Filters []FilterConfig `yaml:"filter"`
+	Name         string        `yaml:"name"`
+	Enabled      bool          `yaml:"enabled"`
+	Action       string        `yaml:"action"`
+	BanDuration  string        `yaml:"ban_duration"`
+	MaxBanCount  int           `yaml:"max_ban_count"`
+	Filters      []FilterConfig `yaml:"filter"`
 }
 
 // FilterConfig defines a single filter condition
@@ -63,6 +71,22 @@ func (a *AppConfig) GetInterval() time.Duration {
 		return 30 * time.Minute
 	}
 	return time.Duration(a.Interval) * time.Minute
+}
+
+// GetStateFile returns the state file path
+func (a *AppConfig) GetStateFile() string {
+	if a.StateFile == "" {
+		return DefaultStateFile
+	}
+	return a.StateFile
+}
+
+// GetBanDuration returns the ban duration as a duration
+func (r *RuleConfig) GetBanDuration() (time.Duration, error) {
+	if r.BanDuration == "" || r.BanDuration == "0" {
+		return 0, nil // Permanent ban
+	}
+	return time.ParseDuration(r.BanDuration)
 }
 
 // Load loads configuration from a YAML file

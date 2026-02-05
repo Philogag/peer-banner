@@ -2,3 +2,4 @@ peer-banner
 *.dat
 config.yaml
 config.yml
+*.json

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/philogag/peer-banner/internal/api"
+	"github.com/philogag/peer-banner/internal/ban"
 	"github.com/philogag/peer-banner/internal/config"
 	"github.com/philogag/peer-banner/internal/detector"
 	"github.com/philogag/peer-banner/internal/output"
@@ -48,8 +49,14 @@ func main() {
 	log.Printf("Starting qBittorrent Leecher Banner...")
 	log.Printf("Config: %s, Dry Run: %v", *configPath, cfg.App.DryRun)
 
+	// Create ban manager
+	banManager, err := ban.NewManager(cfg.App.GetStateFile())
+	if err != nil {
+		log.Printf("Warning: Failed to create ban manager: %v", err)
+	}
+
 	// Create output writer
-	writer := output.NewDATWriter(&cfg.Output)
+	writer := output.NewDATWriter(&cfg.Output, banManager)
 
 	// Create detectors for each server
 	detectors := make([]*detector.Detector, 0, len(cfg.Servers))
@@ -62,7 +69,7 @@ func main() {
 			continue
 		}
 
-		d, err := detector.NewDetector(client, cfg.Rules, cfg.Whitelist)
+		d, err := detector.NewDetector(client, cfg.Rules, cfg.Whitelist, banManager)
 		if err != nil {
 			log.Printf("Warning: Failed to create detector for %s: %v", serverCfg.Name, err)
 			continue

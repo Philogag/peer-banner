@@ -1,5 +1,6 @@
 # =============================================
-# qBittorrent Leecher Banner 配置示例
+# Peer Banner 配置文件示例
+# qBittorrent 吸血用户检测工具
 # =============================================
 
 # 应用基础配置
@@ -10,6 +11,8 @@ app:
   log_level: info
   # 试运行模式（不写入文件）
   dry_run: false
+  # 封禁状态文件路径
+  state_file: bans.json
 
 # qBittorrent 服务器配置
 servers:
@@ -41,10 +44,12 @@ output:
 # 吸血判定规则配置
 # 使用 AND 组合：用户必须同时满足所有 filter 条件才会被判定为吸血用户
 rules:
-  # 规则 1: 下载超过 1GB 但上传低于 50%
+  # 规则 1: 下载超过 1GB 但上传低于 50%（首次封禁24小时，3次后永封）
   - name: "low_share_leecher"
     enabled: true
     action: "ban"
+    ban_duration: "24h"      # 封禁时长（24小时）
+    max_ban_count: 3         # 达到3次后永久封禁
     filter:
       - field: "downloaded"
         operator: ">="
@@ -53,10 +58,12 @@ rules:
         operator: "<"
         value: "50%"
 
-  # 规则 2: 进度达到 99%+ 但上传不足 20%
+  # 规则 2: 进度达到 99%+ 但上传不足 20%（封禁7天）
   - name: "completed_low_upload"
     enabled: true
     action: "ban"
+    ban_duration: "168h"     # 7天 = 168小时
+    max_ban_count: 0        # 不启用自动永封
     filter:
       - field: "progress"
         operator: ">="
@@ -68,10 +75,22 @@ rules:
         operator: "<"
         value: "0.3"
 
-  # 规则 3: 活动超过 24 小时但上传不足 1%
+  # 规则 3: 永久封禁（不设置 ban_duration 或设为 0）
+  - name: "fake_client"
+    enabled: true
+    action: "ban"
+    ban_duration: "0"       # 永久封禁
+    max_ban_count: 0
+    filter:
+      - field: "client"
+        operator: "include"
+        value: "FakeClient"
+
+  # 规则 4: 活动超过 24 小时但上传不足 1%
   - name: "stalled_seeder"
     enabled: true
     action: "ban"
+    ban_duration: "24h"
     filter:
       - field: "active_time"
         operator: ">="
@@ -80,10 +99,11 @@ rules:
         operator: "<"
         value: "1%"
 
-  # 规则 4: 使用加密协议且进度长期停滞
+  # 规则 5: 使用加密协议且进度长期停滞（默认禁用）
   - name: "encrypted_stalled"
     enabled: false
     action: "ban"
+    ban_duration: "1h"
     filter:
       - field: "flag"
         operator: "include"
@@ -95,20 +115,25 @@ rules:
         operator: ">="
         value: "1h"
 
-  # 规则 5: 排除 I2P 用户（仅作为示例）
-  - name: "not_i2p_users"
-    enabled: false
+  # 规则 6: 轻度警告（封禁1小时，多次后永封）
+  - name: "minor_infractor"
+    enabled: true
     action: "ban"
+    ban_duration: "1h"
+    max_ban_count: 5        # 5次后永封
     filter:
-      - field: "flag"
-        operator: "exclude"
-        value: "i2p"
+      - field: "progress"
+        operator: "<"
+        value: "10"
+      - field: "uploaded"
+        operator: "<"
+        value: "100MB"
 
 # =============================================
 # 过滤条件说明:
 # =============================================
 # 每项 filter 包含:
-#   - field: 过滤字段 (progress, uploaded, downloaded, relevance, active_time, flag)
+#   - field: 过滤字段 (progress, uploaded, downloaded, relevance, active_time, flag, client)
 #   - operator: 操作符 (<, >, <=, >=, include, exclude)
 #   - value: 值（自动识别单位）
 #
@@ -119,10 +144,17 @@ rules:
 #   - relevance: 文件关联度 (0.0-1.0)
 #   - active_time: 活动时间，支持 24h, 7d, 1h30m 等格式
 #   - flag: 客户端标志 (encrypted, i2p, pex, dht 等)
+#   - client: 客户端名称
 #
 # 值格式:
 #   - 百分比: 50%, 0.5%
 #   - 字节: 1GB, 512KB, 100MB, 2TB
 #   - 时间: 24h (小时), 7d (天), 1h30m (复合)
 #   - 数值: 99, 0.3
+#
+# 封禁时长格式:
+#   - 24h: 24小时
+#   - 7d: 7天
+#   - 168h: 7天（=168小时）
+#   - 0 或留空: 永久封禁
 # =============================================
