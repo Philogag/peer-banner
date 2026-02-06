@@ -257,8 +257,21 @@ docker build -t peer-banner .
 ```bash
 docker run -d \
   --name peer-banner \
-  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v $(pwd)/config.yaml:/data/config.yaml \
   -v $(pwd)/data:/data \
+  peer-banner
+```
+
+### 自定义配置路径
+
+可以通过 `CONFIG_PATH` 环境变量自定义配置文件路径：
+
+```bash
+docker run -d \
+  --name peer-banner \
+  -v /my/path/config.yaml:/my/path/config.yaml \
+  -v $(pwd)/data:/data \
+  -e CONFIG_PATH=/my/path/config.yaml \
   peer-banner
 ```
 
@@ -273,7 +286,7 @@ services:
     container_name: peer-banner
     restart: unless-stopped
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/data/config.yaml
       - ./data:/data
     environment:
       - TZ=Asia/Shanghai

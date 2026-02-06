@@ -15,7 +15,7 @@ COPY . .
 # Build binary
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /app/qbittorrent-banner .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /app/peer-banner .
 
 # ============================================
 # Runtime Stage
@@ -33,7 +33,7 @@ RUN addgroup -g 1000 appgroup && \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/qbittorrent-banner .
+COPY --from=builder /app/peer-banner .
 
 # Create data directory
 RUN mkdir -p /data && chown -R appuser:appgroup /data
@@ -41,12 +41,15 @@ RUN mkdir -p /data && chown -R appuser:appgroup /data
 # Use non-root user
 USER appuser
 
-# Default command
-ENTRYPOINT ["/app/qbittorrent-banner"]
+# Environment variable for custom config path
+ENV CONFIG_PATH=/data/config.yaml
 
-# Health check
+# Default command
+ENTRYPOINT ["/app/peer-banner", "-config", "${CONFIG_PATH}"]
+
+# Health check - verify peer-banner process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1
+    CMD pgrep -x peer-banner > /dev/null || exit 1
 
 # Expose (no ports needed, daemon only)
 # EXPOSE 8080
