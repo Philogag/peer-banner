@@ -45,7 +45,7 @@ USER appuser
 ENV CONFIG_PATH=/data/config.yaml
 
 # Default command
-ENTRYPOINT ["/app/peer-banner", "-config", "${CONFIG_PATH}"]
+CMD ["/bin/sh", "-c", "/app/peer-banner -config ${CONFIG_PATH}"]
 
 # Health check - verify peer-banner process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
